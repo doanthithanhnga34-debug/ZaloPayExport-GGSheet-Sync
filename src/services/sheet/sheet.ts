@@ -1,7 +1,8 @@
 import { google, sheets_v4 } from "googleapis";
 import { SyncError, TransientError } from "../../error.js";
-import { Cell, COLUMNS, ID_KEY, SHEET_HEADERS } from "../../processing/column.js";
+
 import { log } from "../../logger.js";
+import { Cell, TabSchema } from "../../schema/schema.js";
 
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
@@ -63,13 +64,17 @@ function wrapError(e: unknown): SyncError {
   }
   return new SyncError(`Lỗi Sheets API: ${msg}`, { cause: e });
 }
-
+function sortKeyOf(v: unknown): string {
+  const m = String(v).match(/^(\d{2})-(\d{2})-(\d{4}) (.*)$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}` : String(v);
+}
 export class SheetClient {
   private api: sheets_v4.Sheets | null = null;
 
   constructor(
     private readonly sheetId: string,
     private readonly tab: string,
+    private readonly schema:TabSchema
   ) {}
 
   private getApi(): sheets_v4.Sheets {
@@ -105,7 +110,7 @@ export class SheetClient {
   }
   
   private async applyNumberFormats(api: sheets_v4.Sheets, tabId: number): Promise<void> {
-    const requests: sheets_v4.Schema$Request[] = COLUMNS.flatMap((c, idx) =>
+    const requests: sheets_v4.Schema$Request[] = this.schema.columns.flatMap((c, idx) =>
       c.type === 'number'
         ? [
             {
@@ -123,11 +128,12 @@ export class SheetClient {
   }
 
   async upsert(matrix: Cell[][]): Promise<UpsertStats> {
+    const headers = this.schema.columns.map((c) => c.header);
     if (matrix.length === 0) return { inserted: 0, updated: 0, unchanged: 0 };
-    const last = colLetter(SHEET_HEADERS.length);;
+    const last = colLetter(headers.length);;
     const q = `${this.tab}`;
-    const idPos = COLUMNS.findIndex((c) => c.key === ID_KEY)
-    const createdPos = COLUMNS.findIndex((c)=> c.key === 'created_at');
+    const idPos = this.schema.columns.findIndex((c) => c.key === this.schema.idKey)
+    const createdPos = this.schema.columns.findIndex((c)=> c.key === this.schema.sortKey);
     try{
         const api = this.getApi();
         const tabId = await this.ensureTab(api);
@@ -144,14 +150,33 @@ export class SheetClient {
                 spreadsheetId:this.sheetId,
                 range:`${q}!A1`,
                 valueInputOption:'RAW',
-                requestBody:{values:[SHEET_HEADERS]}
+                requestBody:{values:[headers]}
             });
-            values.push([...SHEET_HEADERS]);
+            values.push([...headers]);
             log.info('Wrote headers of sheets')
         }
-        if(JSON.stringify(values[0]) !== JSON.stringify(SHEET_HEADERS)){
+        if(JSON.stringify(values[0]) !== JSON.stringify(headers)){
             throw new SyncError(`Headers on sheet is not match with config: ${JSON.stringify(values[0])}`)
         }
+//         const norm = (s: unknown) =>
+//   String(s ?? '').normalize('NFC').replace(/\u00a0/g, ' ').trim();
+// const sheetHeaders: unknown[] = values[0] ?? [];
+// const diffs: string[] = [];
+// for (let i = 0; i < Math.max(headers.length, sheetHeaders.length); i++) {
+//   const a = headers[i] ?? '';
+//   const b = String(sheetHeaders[i] ?? '');
+//   if (a !== b) {
+//     const kind = norm(a) === norm(b) ? 'chỉ khác Unicode/khoảng trắng' : 'khác nội dung';
+//     diffs.push(
+//       `cột ${i + 1}: schema=${JSON.stringify(a)} (${[...a].length} ký tự) | sheet=${JSON.stringify(b)} (${[...b].length} ký tự) → ${kind}`,
+//     );
+//   }
+// }
+// if (diffs.length > 0) {
+//   const real = diffs.some((d) => d.endsWith('khác nội dung'));
+//   if (real) throw new SyncError(`Tiêu đề trên Sheet không khớp schema:\n${diffs.join('\n')}`);
+//   log.info('Tiêu đề chỉ khác Unicode/khoảng trắng, bỏ qua', { diffs });
+// }
 
 
         const existing = new Map<string,{rowNo:number, row:unknown[]}>();
@@ -185,7 +210,7 @@ export class SheetClient {
         }
 
         if(newRows.length> 0){
-          newRows.sort((a,b) => String(b[createdPos]).localeCompare(String(a[createdPos])));
+          newRows.sort((a,b) => sortKeyOf(b[createdPos]).localeCompare(sortKeyOf(a[createdPos])));
           await api.spreadsheets.batchUpdate({
             spreadsheetId:this.sheetId,
             requestBody:{

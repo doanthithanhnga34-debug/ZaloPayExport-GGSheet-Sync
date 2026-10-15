@@ -4,19 +4,23 @@ import fs from "node:fs";
 import path from "node:path";
 
 const schema = z.object({
-  ZP_API_URL: z
-    .string()
-    .default("https://mc.zalopay.vn/homepage/index.html"),
+  ZP_API_URL: z.string().default("https://mc.zalopay.vn/homepage/index.html"),
   ZP_TOKEN: z.string().min(1),
-  ZP_APP_ID: z.string().optional(),
-  ZP_HEADLESS: z
-    .string()
-    .default("true")
-    .transform((v) => v !== "false"),
+  ZP_APP_ID: z.string().default("15847_P451468"),
   ZP_TIMEOUT_MS: z.coerce.number().int().default(60000),
+  
+  LOOKBACK_DAYS: z.string().default("2"),
+
+  VNPAY_MERCHANT_ID: z.string().default("145308"),
+  VNPAY_TOKEN: z.string().min(1),
+  VNPAY_BASE_URL: z
+    .string()
+    .default("https://doitac.vnpay.vn/mcview-backoffice/transaction/search"),
 
   GSHEET_ID: z.string().min(1),
-  GSHEET_TAB: z.string().default("Zalopay"),
+  GSHEET_ZP_TAB: z.string().default("Zalopay"),
+  GSHEET_VN_TAB: z.string().default("VNPay"),
+  GSHEET_TEST_TAB: z.string().default("Test"),
 
   WORK_DIR: z.string().default("./.work"),
   LOG_LEVEL: z.enum(["debug", "info", "warning", "error"]).default("info"),

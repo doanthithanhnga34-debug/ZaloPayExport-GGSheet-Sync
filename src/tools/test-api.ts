@@ -17,3 +17,4 @@ console.log('Số giao dịch:', rows.length);
 console.log('Dòng đầu:', rows[0]);
 console.log('Có trùng appTransId không?', new Set(rows.map((r) => r.appTransId)).size !== rows.length);
 console.log(mapTranslog(rows[0]));
+

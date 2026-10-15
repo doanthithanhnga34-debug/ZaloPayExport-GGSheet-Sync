@@ -10,3 +10,8 @@ node_modules/
 dist
 .work
 src/credentials/googlesheet.json
+deploy/*
+.gcloudignore
+Dockerfile
+playwright.config.js
+.dockerignore
