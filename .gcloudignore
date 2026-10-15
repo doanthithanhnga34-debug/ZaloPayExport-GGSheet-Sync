@@ -1,0 +1,10 @@
+.git/
+.gitignore
+node_modules/
+dist/
+.env
+.work/
+src/credentials/
+test-results/
+playwright-report/
+deploy/env.yaml
