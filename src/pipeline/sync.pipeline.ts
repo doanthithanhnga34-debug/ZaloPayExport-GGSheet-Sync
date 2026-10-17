@@ -1,53 +1,109 @@
+import crypto from "node:crypto";
+import { Config } from "../config/config.js";
+import { SheetClient, UpsertStats } from "../services/sheet/sheet.js";
+import { log, setRunId } from "../logger.js";
+import { withRetry } from "../utils/retry.js";
+import { ZalopayApiClient } from "../services/api/zalopay/zalopay.service.js";
+import { mapTranslog, ZALOPAY_SCHEMA } from "../processing/zalopay/mapper.js";
+import { Cell, toRow } from "../schema/schema.js";
+import { VNpayApiClient } from "../services/api/vnpay/vnpay.service.js";
+import { mapTrans, VNPAY_SCHEMA } from "../processing/vnpay/mapper.js";
 
-
-import crypto from 'node:crypto'
-import { Config } from '../config/config.js';
-import { SheetClient, UpsertStats } from '../services/sheet/sheet.js';
-import { log, setRunId } from '../logger.js';
-import { withRetry } from '../utils/retry.js';
-import { ZalopayApiClient } from '../services/api/zalopay/zalopay.service.js';
-import { mapTranslog, ZALOPAY_SCHEMA } from '../processing/zalopay/mapper.js';
-import { Cell, toRow } from '../schema/schema.js';
-
-
-
-export async function fetchZaloPayRows(cfg:Config):Promise<Cell[][]>{
-    const api = new ZalopayApiClient({url:cfg.ZP_API_URL, token:cfg.ZP_TOKEN, appId:cfg.ZP_APP_ID});
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate()-Number(cfg.LOOKBACK_DAYS));
-    const logs = await api.fetchAll(from, to);
-    const unique = [...new Map(logs.map((t) => [t.transId, t])).values()];
-    const rec = mapTranslog(unique[0]);
-console.log('mapper keys:', Object.keys(rec));
-console.log('schema keys:', ZALOPAY_SCHEMA.columns.map((c) => c.key));
+export async function fetchZaloPayRows(cfg: Config): Promise<Cell[][]> {
+  const api = new ZalopayApiClient({
+    url: cfg.ZP_API_URL,
+    token: cfg.ZP_TOKEN,
+    appId: cfg.ZP_APP_ID,
+  });
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - Number(cfg.LOOKBACK_DAYS));
+  const logs = await api.fetchAll(from, to);
+  const unique = [...new Map(logs.map((t) => [t.transId, t])).values()];
+  const rec = mapTranslog(unique[0]);
+  console.log("mapper keys:", Object.keys(rec));
+  console.log(
+    "schema keys:",
+    ZALOPAY_SCHEMA.columns.map((c) => c.key),
+  );
   return unique.map((t) => toRow(ZALOPAY_SCHEMA, mapTranslog(t)));
 }
-// export async funtion runOnce(cfg:Config) :Promise<UpsertStats>{
-//     setRunId(crypto.randomBytes(4).toString(''))
-// }
-export async function runOnce(cfg:Config):Promise<UpsertStats>{
-    setRunId(crypto.randomBytes(4).toString('hex'));
-    log.info('Start run one');
-    const api = new ZalopayApiClient({
-        url:cfg.ZP_API_URL,
-        token:cfg.ZP_TOKEN,
-        appId:cfg.ZP_APP_ID
-    })
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - 20);
-    const translogs = await withRetry('Fetch Zalopay api, ', cfg.MAX_RETRIES, ()=>
-        api.fetchAll(from,to) ,
-    )
-    const unique = [...new Map(translogs.map((t)=>[t.transId,t])).values()];
-    log.info('Fetched transactions',{fetched: translogs.length, unique:unique.length});
-    const matrix = unique.map((t) => toRow(ZALOPAY_SCHEMA, mapTranslog(t)));
 
-    const sheet = new SheetClient(cfg.GSHEET_ID,cfg.GSHEET_ZP_TAB,ZALOPAY_SCHEMA);
-    const stats = await withRetry('Write to ggsheet', cfg.MAX_RETRIES,()=>
-        sheet.upsert(matrix)
-    );
-    log.info('Run successfully', {...stats});
-    return stats
+export async function fetchVNPayRows(cfg: Config): Promise<Cell[][]> {
+  const api = new VNpayApiClient({
+    url: cfg.VNPAY_BASE_URL,
+    token: cfg.VNPAY_TOKEN,
+    merchantId: cfg.VNPAY_MERCHANT_ID,
+  });
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - Number(cfg.LOOKBACK_DAYS));
+  const trans = await api.fetchAll(from, to);
+  const unique = [...new Map(trans.map((t) => [t.id, t])).values()];
+  return unique.map((t) => toRow(VNPAY_SCHEMA, mapTrans(t)));
+}
+export async function buildZalopaySync(cfg: Config): Promise<UpsertStats> {
+  setRunId(crypto.randomBytes(4).toString("hex"));
+  log.info("Start run one");
+  const api = new ZalopayApiClient({
+    url: cfg.ZP_API_URL,
+    token: cfg.ZP_TOKEN,
+    appId: cfg.ZP_APP_ID,
+  });
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - Number(cfg.LOOKBACK_DAYS));
+  const translogs = await withRetry(
+    "Fetch Zalopay api, ",
+    cfg.MAX_RETRIES,
+    () => api.fetchAll(from, to),
+  );
+
+  const unique = [...new Map(translogs.map((t) => [t.transId, t])).values()];
+  log.info("Fetched transactions", {
+    fetched: translogs.length,
+    unique: unique.length,
+  });
+  const matrix = unique.map((t) => toRow(ZALOPAY_SCHEMA, mapTranslog(t)));
+
+  const sheet = new SheetClient(
+    cfg.GSHEET_ID,
+    cfg.GSHEET_ZP_TAB,
+    ZALOPAY_SCHEMA,
+  );
+  const stats = await withRetry("Write to ggsheet", cfg.MAX_RETRIES, () =>
+    sheet.upsert(matrix),
+  );
+  log.info("Run successfully", { ...stats });
+  return stats;
+}
+
+export async function buildVNPAYSync(cfg: Config): Promise<UpsertStats> {
+  setRunId(crypto.randomBytes(4).toString("hex"));
+  log.info("Start run VNpay");
+  const api = new VNpayApiClient({
+    url: cfg.VNPAY_BASE_URL,
+    token: cfg.VNPAY_TOKEN,
+    merchantId: cfg.VNPAY_MERCHANT_ID,
+  });
+  const from = new Date();
+  const to = new Date();
+  from.setDate(from.getDate() - Number(cfg.LOOKBACK_DAYS));
+  const translogs = await withRetry("Fetch vnpay api", cfg.MAX_RETRIES, () =>
+    api.fetchAll(from, to),
+  );
+  const unique = [...new Map(translogs.map((t) => [t.id, t])).values()];
+  log.info("Fetch trans", { fetched: translogs.length, unique: unique.length });
+  const matrix = unique.map((t) => toRow(VNPAY_SCHEMA, mapTrans(t)));
+
+  const sheet = new SheetClient(
+    cfg.GSHEET_ID,
+    cfg.GSHEET_VN_TAB,
+    VNPAY_SCHEMA,
+  );
+  const stats = await withRetry("write to gg sheet", cfg.MAX_RETRIES, () =>
+    sheet.upsert(matrix),
+  );
+  log.info("run successfully", { ...stats });
+  return stats;
 }

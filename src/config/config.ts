@@ -5,14 +5,14 @@ import path from "node:path";
 
 const schema = z.object({
   ZP_API_URL: z.string().default("https://mc.zalopay.vn/homepage/index.html"),
-  ZP_TOKEN: z.string().min(1),
+  ZP_TOKEN: z.string(),
   ZP_APP_ID: z.string().default("15847_P451468"),
   ZP_TIMEOUT_MS: z.coerce.number().int().default(60000),
   
   LOOKBACK_DAYS: z.string().default("2"),
 
   VNPAY_MERCHANT_ID: z.string().default("145308"),
-  VNPAY_TOKEN: z.string().min(1),
+  VNPAY_TOKEN: z.string(),
   VNPAY_BASE_URL: z
     .string()
     .default("https://doitac.vnpay.vn/mcview-backoffice/transaction/search"),

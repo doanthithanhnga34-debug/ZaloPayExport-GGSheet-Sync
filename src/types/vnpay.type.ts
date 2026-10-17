@@ -9,9 +9,12 @@ export interface TransactionPagerDTOS{
     customerFullName:string;
     customerAccountNumber:string;
     amountAfterDiscount:number;
-    shopName:string;
+    terminalName:string;
+    terminalCode:string;
     amountBeforeDiscount:number;
-    paymentSource:number
+    paymentSource:number;
+    voucherCode:string;
+    status:string
 }
 
 export interface VNPayResponse{

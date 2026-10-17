@@ -1,7 +1,7 @@
 
 import { loadConfig } from "./config/config.js";
 import { log, setupLogger } from "./logger.js";
-import { runOnce } from "./pipeline/sync.pipeline.js";
+import { buildVNPAYSync, buildZalopaySync} from "./pipeline/sync.pipeline.js";
 
 
 
@@ -9,14 +9,24 @@ const cfg = loadConfig();
 
 setupLogger({level:cfg.LOG_LEVEL, fmt:cfg.LOG_FORMAT});
 
+const tasks =[
+  {
+    name:'zalopay', run:()=>  buildZalopaySync(cfg)
+  },
+  {
+    name:'vnpay', run:() => buildVNPAYSync(cfg)
+  }
+]
 
-try {
- await runOnce(cfg);
-
-} catch (err) {
-  const e = err instanceof Error ? err : new Error(String(err));
-  log.error(`Lượt chạy thất bại: ${e.message}`, { err: e, error_type: e.name });
-  process.exitCode = 1;
+const failed :string[] =[];
+for(const t of tasks){
+  try{
+    await t.run();
+  }catch(e){
+    failed.push(t.name);
+    log.error('Job failed',{job:t.name, err:String(e)})
+  }
 }
+if(failed.length>0) process.exit(1)
 
 
